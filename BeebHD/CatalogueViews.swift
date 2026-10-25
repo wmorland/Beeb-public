@@ -750,6 +750,7 @@ struct ShowCard: View {
     @Published var error: String?
     @Published var retry = 0
     @Published var episodePage = 1
+    @Published var newestFirst: Bool?
 }
 struct CatalogueShowView: View {
     let show: CatalogueShow
@@ -759,10 +760,16 @@ struct CatalogueShowView: View {
     @StateObject private var state = ShowState()
     @FocusState private var focusedEpisode: String?
     var current: CatalogueShow { state.show ?? show }
-    var orderedSeries: [CatalogueSeries] { EpisodeSequence.orderedSeries(current.series) }
+    var newestFirst: Bool { state.newestFirst ?? EpisodeSequence.prefersNewestFirst(current.series) }
+    var orderedSeries: [CatalogueSeries] {
+        let series = EpisodeSequence.orderedSeries(current.series)
+        return newestFirst ? series.reversed() : series
+    }
+    var selectedSeriesID: String? { state.seriesID.isEmpty ? orderedSeries.first?.id : state.seriesID }
     var selectedEpisodes: [CatalogueEpisode] {
-        let group = orderedSeries.first { $0.id == state.seriesID } ?? orderedSeries.first
-        return EpisodeSequence.ordered(group?.episodes ?? [])
+        let group = orderedSeries.first { $0.id == selectedSeriesID } ?? orderedSeries.first
+        let episodes = EpisodeSequence.ordered(group?.episodes ?? [])
+        return newestFirst ? episodes.reversed() : episodes
     }
     var visibleEpisodes: [CatalogueEpisode] { Array(selectedEpisodes.dropFirst((state.episodePage - 1) * 30).prefix(30)) }
     @Environment(\.dismiss) private var dismiss
@@ -781,13 +788,19 @@ struct CatalogueShowView: View {
                         HStack(spacing: 20) {
                             ForEach(orderedSeries) { series in
                                 Button(series.title) { state.seriesID = series.id; state.episodePage = 1 }
-                                    .tint((state.seriesID.isEmpty ? orderedSeries.first?.id : state.seriesID) == series.id ? .pink : .gray)
+                                    .tint(selectedSeriesID == series.id ? .pink : .gray)
                             }
                         }.padding(.vertical, 30).padding(.horizontal, 24)
                     }.scrollClipDisabled().padding(.horizontal, -24)
                     // Full-width sections let Down from the right-aligned bookmark enter
                     // these left-aligned rows instead of skipping to the episode grid.
                     .focusSection()
+                }
+                if selectedEpisodes.count > 1 || orderedSeries.count > 1 {
+                    Button(newestFirst ? "Newest first" : "Oldest first", systemImage: "arrow.up.arrow.down") {
+                        // Keep the visible series selected rather than jumping to the other end.
+                        state.seriesID = selectedSeriesID ?? ""; state.newestFirst = !newestFirst; state.episodePage = 1
+                    }.frame(maxWidth: .infinity, alignment: .leading).focusSection()
                 }
                 if selectedEpisodes.count > 30 {
                     HStack(spacing: 24) {

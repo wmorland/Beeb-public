@@ -10,6 +10,16 @@ struct CatalogueEpisode: Codable, Identifiable, Hashable {
     var parentPosition: Int? = nil
     var broadcastDate: String? = nil
     var id: String { programme.id }
+    /// Some long-running shows have no BBC slices and name the series only in the
+    /// subtitle ("2026: Episode 3"), so group on that prefix instead of one list.
+    private var subtitleSeries: String? {
+        guard sliceID == "episodes", let separator = subtitle.range(of: ": ") else { return nil }
+        let rest = subtitle[separator.upperBound...]
+        guard rest.range(of: "^(?:episode\\s+\\d+|\\d+\\.)", options: [.regularExpression, .caseInsensitive]) != nil else { return nil }
+        return String(subtitle[..<separator.lowerBound])
+    }
+    var seriesKey: String { subtitleSeries.map { "subtitle:" + $0 } ?? sliceID }
+    var seriesLabel: String { subtitleSeries ?? seriesTitle }
 }
 struct CatalogueSeries: Identifiable {
     let id: String
@@ -36,10 +46,10 @@ struct CatalogueShow: Codable, Identifiable, Hashable {
     var series: [CatalogueSeries] {
         var order = [String](), groups = [String: [CatalogueEpisode]]()
         for e in episodes {
-            if groups[e.sliceID] == nil { order.append(e.sliceID) }
-            groups[e.sliceID, default: []].append(e)
+            if groups[e.seriesKey] == nil { order.append(e.seriesKey) }
+            groups[e.seriesKey, default: []].append(e)
         }
-        return order.map { CatalogueSeries(id: $0, title: groups[$0]?.first?.seriesTitle ?? "Episodes", episodes: groups[$0] ?? []) }
+        return order.map { CatalogueSeries(id: $0, title: groups[$0]?.first?.seriesLabel ?? "Episodes", episodes: groups[$0] ?? []) }
     }
 }
 struct CataloguePage {

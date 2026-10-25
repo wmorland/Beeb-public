@@ -23,12 +23,19 @@ enum EpisodeSequence {
               let range = Range(match.range(at: 1), in: text) else { return nil }
         return Int(text[range])
     }
-    private static func season(_ episode: CatalogueEpisode) -> Int? {
-        number(episode.seriesTitle + " " + episode.subtitle, pattern: "\\b(?:series|season)\\s+(\\d+)\\b")
+    private static func seriesNumber(_ episode: CatalogueEpisode) -> Int? {
+        number(episode.seriesLabel + " " + episode.subtitle, pattern: "\\b(?:series|season)\\s+(\\d+)\\b")
     }
+    /// Magazine shows name each run by year ("2026", "Winter Specials 2025/26").
+    private static func year(_ episode: CatalogueEpisode) -> Int? {
+        number(episode.seriesLabel, pattern: "\\b((?:19|20)\\d{2})\\b")
+    }
+    private static func season(_ episode: CatalogueEpisode) -> Int? { seriesNumber(episode) ?? year(episode) }
     private static func position(_ episode: CatalogueEpisode) -> Int? {
-        if let value = episode.parentPosition, value > 0 { return value }
         let subtitle = episode.subtitle.components(separatedBy: ": ").last ?? episode.subtitle
+        // BBC's parent_position is sometimes stale; a numbered subtitle is what viewers see.
+        if let value = number(subtitle, pattern: "^\\s*(?:episode\\s+(?=\\d)|(?=\\d+\\.))(\\d+)") { return value }
+        if let value = episode.parentPosition, value > 0 { return value }
         return number(subtitle, pattern: "^\\s*(?:episode\\s+)?(\\d+)(?:[.:]\\s*|\\s+|$)")
     }
     private static func date(_ episode: CatalogueEpisode) -> Date? {
@@ -50,25 +57,36 @@ enum EpisodeSequence {
             return left.offset < right.offset
         }.map(\.element)
     }
+    /// Numbered series sort by number, otherwise by first air date, else BBC's order.
     static func orderedSeries(_ series: [CatalogueSeries]) -> [CatalogueSeries] {
-        series.enumerated().sorted { left, right in
-            if let a = left.element.episodes.first.flatMap(season), let b = right.element.episodes.first.flatMap(season), a != b { return a < b }
-            return left.offset < right.offset
-        }.map(\.element)
+        let keyed = series.enumerated().map { offset, group in
+            (group, offset, group.episodes.first.flatMap(season), group.episodes.compactMap(date).min())
+        }
+        if keyed.allSatisfy({ $0.2 != nil }) {
+            return keyed.sorted { ($0.2!, $0.3 ?? .distantFuture, $0.1) < ($1.2!, $1.3 ?? .distantFuture, $1.1) }.map(\.0)
+        }
+        if keyed.allSatisfy({ $0.3 != nil }) {
+            return keyed.sorted { ($0.3!, $0.1) < ($1.3!, $1.1) }.map(\.0)
+        }
+        return keyed.map(\.0)
+    }
+    /// Year-named runs are browsed latest-first; numbered dramas start at Series 1.
+    static func prefersNewestFirst(_ series: [CatalogueSeries]) -> Bool {
+        series.contains { $0.episodes.first.map { seriesNumber($0) == nil && year($0) != nil } ?? false }
     }
     static func next(after current: CatalogueEpisode, in show: CatalogueShow) -> CatalogueEpisode? {
         let candidates = show.episodes.filter { $0.id != current.id }
         if let order = position(current) {
-            if let series = season(current) {
+            if let series = seriesNumber(current) {
                 // Sort by BBC episode position and explicit series number, rather
                 // than assuming the API is oldest-first (some shows are reversed).
                 let numbered = candidates.compactMap { episode -> (CatalogueEpisode, Int, Int)? in
-                    guard let s = season(episode), let p = position(episode), s > series || (s == series && p > order) else { return nil }
+                    guard let s = seriesNumber(episode), let p = position(episode), s > series || (s == series && p > order) else { return nil }
                     return (episode, s, p)
                 }
                 if let next = numbered.min(by: { ($0.1, $0.2) < ($1.1, $1.2) }) { return next.0 }
             } else {
-                let sameSeries = candidates.filter { $0.sliceID == current.sliceID && position($0).map { $0 > order } == true }
+                let sameSeries = candidates.filter { $0.seriesKey == current.seriesKey && position($0).map { $0 > order } == true }
                 if let next = sameSeries.min(by: { position($0)! < position($1)! }) { return next }
             }
         }

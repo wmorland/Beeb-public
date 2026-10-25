@@ -22,6 +22,29 @@ import Foundation
         precondition(EpisodeSequence.next(after: dated, in: show)?.id == datedNext.id, "Unnumbered episodes use broadcast dates")
         dated.broadcastDate = nil; datedNext.broadcastDate = nil; show.episodes = [datedNext, dated]
         precondition(EpisodeSequence.next(after: dated, in: show) == nil, "Do not guess order without metadata")
+        // Gardeners' World: no BBC slices, series named by subtitle prefix, newest-first, stale parent_position.
+        func magazine(_ id: String, _ subtitle: String, position: Int, date: String) -> CatalogueEpisode {
+            CatalogueEpisode(programme: Programme(id: id, title: "Gardeners' World", summary: "", image: nil, version: "v0000001", guidance: nil), subtitle: subtitle, duration: "", sliceID: "episodes", seriesTitle: "Episodes", parentPosition: position, broadcastDate: date)
+        }
+        let gw26e17 = magazine("b0000017", "2026: Episode 17", position: 14, date: "2026-07-10T00:00:00.000Z")
+        let gw26e14 = magazine("b0000014", "2026: Episode 14", position: 14, date: "2026-06-19T00:00:00.000Z")
+        let gw26e1 = magazine("b0000011", "2026: Episode 1", position: 1, date: "2026-03-13T00:00:00.000Z")
+        let gwComp1 = magazine("b0000021", "Compilations 2026: Episode 1", position: 1, date: "2026-01-09T00:00:00.000Z")
+        let gwWinter4 = magazine("b0000034", "Winter Specials 2025/26: Episode 4", position: 4, date: "2025-12-19T00:00:00.000Z")
+        let gwWinter1 = magazine("b0000031", "Winter Specials 2025/26: Episode 1", position: 1, date: "2025-11-28T00:00:00.000Z")
+        let gw25e32 = magazine("b0000132", "2025: Episode 32", position: 32, date: "2025-11-21T00:00:00.000Z")
+        let gw25e4 = magazine("b0000104", "2025: Episode 4", position: 4, date: "2025-04-04T00:00:00.000Z")
+        let gardeners = CatalogueShow(id: "b006mw1h", title: "Gardeners' World", summary: "", image: nil, letter: "g", channel: "BBC", categories: [], expectedEpisodes: 8, singleEpisode: false,
+                                      episodes: [gw26e17, gw26e14, gw26e1, gwComp1, gwWinter4, gwWinter1, gw25e32, gw25e4], indexedAt: Date())
+        let gwSeries = EpisodeSequence.orderedSeries(gardeners.series)
+        precondition(gwSeries.map(\.title) == ["2025", "Winter Specials 2025/26", "Compilations 2026", "2026"], "Subtitle-named runs become series, in air-date order")
+        precondition(EpisodeSequence.ordered(gwSeries[3].episodes).map(\.id) == [gw26e1.id, gw26e14.id, gw26e17.id], "Subtitle episode numbers beat stale BBC positions")
+        precondition(EpisodeSequence.prefersNewestFirst(gardeners.series) && !EpisodeSequence.prefersNewestFirst(show.series), "Year-named shows default newest-first; numbered series do not")
+        precondition(EpisodeSequence.next(after: gw25e32, in: gardeners)?.id == gwWinter1.id, "Year run continues into the next run by air date")
+        precondition(EpisodeSequence.next(after: gwWinter4, in: gardeners)?.id == gwComp1.id, "Specials continue by air date")
+        precondition(EpisodeSequence.next(after: gw26e14, in: gardeners)?.id == gw26e17.id, "Next episode stays within its run")
+        let titled = CatalogueEpisode(programme: one.programme, subtitle: "Doctor Foster: The Return", duration: "", sliceID: "episodes", seriesTitle: "Episodes")
+        precondition(titled.seriesKey == "episodes", "Colons in ordinary titles do not create series")
         show.episodes = [three, two, one]; show.expectedEpisodes = 3
         let suite = "BeebHistoryTests-" + UUID().uuidString
         let defaults = UserDefaults(suiteName: suite)!
