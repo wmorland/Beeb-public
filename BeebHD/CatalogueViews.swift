@@ -186,6 +186,8 @@ struct HomeView: View {
                             case .settings: SettingsView(catalogue: catalogue)
                             }
                         }.id(tab).disabled(sidebarOpen)
+                            // Down from a right-hand tab must enter pages whose content starts at the left.
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top).focusSection()
                     }
                 }
             }.background {
@@ -755,8 +757,6 @@ struct CatalogueShowView: View {
     @ObservedObject var library: Library
     var preferUHDSeries = false
     @StateObject private var state = ShowState()
-    @StateObject private var bookmarkFocus = BookmarkFocusDestination()
-    @State private var episodeColumns = 5
     @FocusState private var focusedEpisode: String?
     var current: CatalogueShow { state.show ?? show }
     var orderedSeries: [CatalogueSeries] { EpisodeSequence.orderedSeries(current.series) }
@@ -772,7 +772,6 @@ struct CatalogueShowView: View {
                 HStack {
                     Text(current.title).font(.largeTitle).bold(); Spacer()
                     ProgrammeBookmarkButton(show: current, library: library)
-                        .background(BookmarkFocusAnchor(destination: bookmarkFocus))
                 }.focusSection()
                 Text(current.summary).font(.title3).foregroundStyle(.secondary)
                 if state.show == nil && state.error == nil { ProgressView("Getting series and episodes…") }
@@ -786,28 +785,21 @@ struct CatalogueShowView: View {
                             }
                         }.padding(.vertical, 30).padding(.horizontal, 24)
                     }.scrollClipDisabled().padding(.horizontal, -24)
+                    // Full-width sections let Down from the right-aligned bookmark enter
+                    // these left-aligned rows instead of skipping to the episode grid.
+                    .focusSection()
                 }
                 if selectedEpisodes.count > 30 {
                     HStack(spacing: 24) {
                         Button("Previous episodes") { state.episodePage -= 1 }.disabled(state.episodePage <= 1)
                         Text("Episodes \((state.episodePage - 1) * 30 + 1)–\(min(state.episodePage * 30, selectedEpisodes.count))")
                         Button("More episodes") { state.episodePage += 1 }.disabled(state.episodePage * 30 >= selectedEpisodes.count)
-                    }
+                    }.frame(maxWidth: .infinity, alignment: .leading).focusSection()
                 }
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 330), spacing: 30)], spacing: 30) {
                     ForEach(visibleEpisodes) { episode in
                         Button { state.selection = episode.programme } label: { ProgrammeCard(programme: episode.programme) }.buttonStyle(ProgrammeCardStyle()).focused($focusedEpisode, equals: episode.id)
                     }
-                }
-                .background {
-                    GeometryReader { geometry in
-                        Color.clear.onAppear { episodeColumns = max(1, Int((geometry.size.width + 30) / 360)) }
-                            .onChange(of: geometry.size.width) { _, width in episodeColumns = max(1, Int((width + 30) / 360)) }
-                    }
-                }
-                .background(alignment: .top) {
-                    WideBookmarkFocusGuide(destination: bookmarkFocus, enabled: visibleEpisodes.prefix(episodeColumns).contains { $0.id == focusedEpisode })
-                        .frame(height: 24).offset(y: -26)
                 }
                 if state.show != nil && selectedEpisodes.isEmpty { Text("No episodes are currently available.").foregroundStyle(.secondary) }
             }.padding(60)
